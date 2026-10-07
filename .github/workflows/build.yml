@@ -1,0 +1,52 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Convert YOLO26 .pt -> ONNX
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -U ultralytics onnx onnxslim onnxruntime
+          mkdir -p app/src/main/assets
+          for S in 256 320 416 480 640; do
+            yolo export model=models/yolo26n.pt format=onnx imgsz=$S
+            cp models/yolo26n.onnx app/src/main/assets/model_$S.onnx
+          done
+          python - <<'PY'
+          import onnxruntime as ort
+          for S in (256, 320, 416, 480, 640):
+              s = ort.InferenceSession(f"app/src/main/assets/model_{S}.onnx")
+              print(S, "INPUT :", [(i.name, i.shape) for i in s.get_inputs()])
+              print(S, "OUTPUT:", [(o.name, o.shape) for o in s.get_outputs()])
+          print("NAMES :", s.get_modelmeta().custom_metadata_map.get("names"))
+          PY
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: YoloDetect-apk
+          path: app/build/outputs/apk/debug/*.apk

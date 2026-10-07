@@ -1,0 +1,44 @@
+name: Convert model (.pt -> .onnx)
+
+# Запускается вручную: Actions -> Convert model -> Run workflow.
+# Результат — артефакт ONNX-Model. Скачай его, закинь на телефон и добавь в приложении:
+# Модели -> «Добавить модель (.onnx)».
+on:
+  workflow_dispatch:
+    inputs:
+      model_path:
+        description: "Путь к .pt в репозитории (например models/my_model.pt)"
+        required: true
+        default: "models/yolo26n.pt"
+      imgsz:
+        description: "Размер входа (кратно 32)"
+        required: true
+        default: "640"
+      dynamic:
+        description: "Динамический размер (в приложении можно будет менять разрешение)"
+        type: boolean
+        default: true
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Export
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -U ultralytics onnx onnxslim onnxruntime
+          yolo export model="${{ inputs.model_path }}" format=onnx imgsz=${{ inputs.imgsz }} dynamic=${{ inputs.dynamic }}
+          mkdir -p out
+          cp "$(dirname "${{ inputs.model_path }}")"/*.onnx out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ONNX-Model
+          path: out/*.onnx
